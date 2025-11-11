@@ -1,7 +1,7 @@
 
 # Simple Marketplace Web Application
-Spring Boot CRUD + Basic Authentication  
-Tasks №2 and №3
+Spring Boot CRUD + Basic Authentication + CSRF Protection
+Tasks №2, №3, and №4
 
 ---
 
@@ -9,6 +9,7 @@ Tasks №2 and №3
 A simple Spring Boot web application that demonstrates:
 - CRUD REST API for managing Products and Orders
 - Basic Authentication protection with user roles
+- **CSRF (Cross-Site Request Forgery) Protection (Lab 4)**
 - No database (data stored in memory)
 - Tested via Postman
 
@@ -204,6 +205,341 @@ GET http://localhost:8080/api/orders/1
 | 8  | DELETE /api/orders/1         | user  | 403 Forbidden    |
 | 9  | GET /api/products (no auth)  | -     | 401 Unauthorized |
 | 10 | GET /api/orders (wrong pass) | -     | 401 Unauthorized |
+
+---
+
+## Task №4 — CSRF Protection
+
+### What is CSRF?
+
+**CSRF (Cross-Site Request Forgery)** is a type of attack where a malicious website tricks a user's browser into making unauthorized requests to a different website where the user is authenticated.
+
+**Example Attack Scenario:**
+1. User logs into `bankapp.com` and gets an authentication cookie
+2. User visits `malicious.com` while still logged in to `bankapp.com`
+3. `malicious.com` contains hidden code that sends a request to `bankapp.com/transfer?to=attacker&amount=1000`
+4. Browser automatically includes the authentication cookie with the request
+5. `bankapp.com` processes the request because it looks legitimate
+6. Money is transferred to the attacker's account
+
+### How Spring Security Protects Against CSRF
+
+Spring Security implements the **Synchronizer Token Pattern**:
+
+1. **Token Generation**: Server generates a unique, random CSRF token for each session
+2. **Token Storage**: Token is stored in:
+   - **Cookie** (name: `XSRF-TOKEN`) - readable by JavaScript
+   - **Server session** - for validation
+3. **Token Requirement**: State-changing requests (POST, PUT, DELETE, PATCH) must include the token
+4. **Token Validation**: Server validates the token from the request matches the session token
+5. **Protection**: Malicious sites cannot read the token due to Same-Origin Policy
+
+**Safe Methods** (GET, HEAD, OPTIONS, TRACE) don't require CSRF tokens because they should not modify state.
+
+### CSRF Configuration in This Project
+
+Located in `SecurityConfig.java:87-92`:
+
+```java
+.csrf(csrf -> csrf
+    .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+)
+```
+
+**Configuration Details:**
+- `CookieCsrfTokenRepository`: Stores token in browser cookie
+- `withHttpOnlyFalse()`: Allows JavaScript to read the cookie (needed for AJAX/SPA)
+- Cookie name: `XSRF-TOKEN` (default)
+- Header name: `X-XSRF-TOKEN` (default)
+- Parameter name: `_csrf` (default)
+
+### New Endpoints for Lab 4
+
+#### 1. CSRF Token Endpoint
+
+```
+GET /csrf-token
+```
+
+**Purpose**: Retrieve the current CSRF token for testing
+
+**Authentication**: Not required (public endpoint)
+
+**Response Example**:
+```json
+{
+  "token": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "headerName": "X-XSRF-TOKEN",
+  "parameterName": "_csrf"
+}
+```
+
+**File**: `CsrfController.java`
+
+#### 2. Test Endpoints
+
+All located at `/api/v1/test`:
+
+| Endpoint | Method | Auth Required | CSRF Required | Description |
+|----------|--------|---------------|---------------|-------------|
+| `/api/v1/test/public` | GET | No | No | Public endpoint for testing |
+| `/api/v1/test/protected` | GET | Yes | No | Protected GET (safe method) |
+| `/api/v1/test/protected` | POST | Yes | Yes | Protected POST (demonstrates CSRF) |
+| `/api/v1/test/protected` | PUT | Yes | Yes | Protected PUT (demonstrates CSRF) |
+| `/api/v1/test/protected/{id}` | DELETE | Yes | Yes | Protected DELETE (demonstrates CSRF) |
+| `/api/v1/test/admin` | POST | Yes (ADMIN) | Yes | Admin-only endpoint |
+| `/api/v1/test/info` | GET | Yes | No | CSRF information endpoint |
+
+**File**: `TestController.java`
+
+### Testing CSRF Protection with Postman
+
+#### Test 1: GET Request Without CSRF Token (Should Work)
+
+**Request:**
+```
+GET http://localhost:8080/api/v1/test/protected
+Authorization: Basic auth (admin/admin123)
+```
+
+**Expected Result**: `200 OK` (GET requests don't require CSRF tokens)
+
+---
+
+#### Test 2: POST Request Without CSRF Token (Should Fail)
+
+**Request:**
+```
+POST http://localhost:8080/api/v1/test/protected
+Authorization: Basic auth (admin/admin123)
+Content-Type: application/json
+
+{
+  "data": "test"
+}
+```
+
+**Expected Result**: `403 Forbidden`
+
+**Response**:
+```json
+{
+  "timestamp": "2025-01-15T10:30:00.000+00:00",
+  "status": 403,
+  "error": "Forbidden",
+  "path": "/api/v1/test/protected"
+}
+```
+
+**Reason**: CSRF token is missing
+
+---
+
+#### Test 3: POST Request With Valid CSRF Token (Should Work)
+
+**Step 1**: Get the CSRF token
+```
+GET http://localhost:8080/csrf-token
+```
+
+**Response**:
+```json
+{
+  "token": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "headerName": "X-XSRF-TOKEN",
+  "parameterName": "_csrf"
+}
+```
+
+**Step 2**: Copy the token value
+
+**Step 3**: Make POST request with token
+```
+POST http://localhost:8080/api/v1/test/protected
+Authorization: Basic auth (admin/admin123)
+X-XSRF-TOKEN: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+Content-Type: application/json
+
+{
+  "data": "test"
+}
+```
+
+**Expected Result**: `200 OK`
+
+**Response**:
+```json
+{
+  "message": "POST request successful! CSRF token was valid.",
+  "timestamp": "2025-01-15T10:35:00",
+  "csrf_required": true,
+  "auth_required": true,
+  "received_data": {
+    "data": "test"
+  }
+}
+```
+
+---
+
+#### Test 4: POST to Admin Endpoint as Non-Admin (With CSRF Token)
+
+**Request:**
+```
+POST http://localhost:8080/api/v1/test/admin
+Authorization: Basic auth (manager/manager123)
+X-XSRF-TOKEN: {valid-token}
+Content-Type: application/json
+
+{
+  "action": "admin operation"
+}
+```
+
+**Expected Result**: `403 Forbidden` (insufficient role, not CSRF issue)
+
+---
+
+#### Test 5: POST to Admin Endpoint as Admin (With CSRF Token)
+
+**Request:**
+```
+POST http://localhost:8080/api/v1/test/admin
+Authorization: Basic auth (admin/admin123)
+X-XSRF-TOKEN: {valid-token}
+Content-Type: application/json
+
+{
+  "action": "admin operation"
+}
+```
+
+**Expected Result**: `200 OK`
+
+---
+
+### Complete Postman Testing Workflow
+
+1. **Start the application**: `mvn spring-boot:run`
+
+2. **Test public endpoint** (no auth, no CSRF):
+   ```
+   GET http://localhost:8080/api/v1/test/public
+   → 200 OK
+   ```
+
+3. **Get CSRF token**:
+   ```
+   GET http://localhost:8080/csrf-token
+   → Copy the token value
+   ```
+
+4. **Test protected GET** (with auth, no CSRF needed):
+   ```
+   GET http://localhost:8080/api/v1/test/protected
+   Authorization: Basic admin/admin123
+   → 200 OK
+   ```
+
+5. **Test protected POST without CSRF** (should fail):
+   ```
+   POST http://localhost:8080/api/v1/test/protected
+   Authorization: Basic admin/admin123
+   → 403 Forbidden
+   ```
+
+6. **Test protected POST with CSRF** (should work):
+   ```
+   POST http://localhost:8080/api/v1/test/protected
+   Authorization: Basic admin/admin123
+   X-XSRF-TOKEN: {your-token-here}
+   → 200 OK
+   ```
+
+7. **Test with invalid CSRF token** (should fail):
+   ```
+   POST http://localhost:8080/api/v1/test/protected
+   Authorization: Basic admin/admin123
+   X-XSRF-TOKEN: invalid-token-12345
+   → 403 Forbidden
+   ```
+
+8. **Test other state-changing methods** (PUT, DELETE):
+   ```
+   PUT http://localhost:8080/api/v1/test/protected
+   Authorization: Basic admin/admin123
+   X-XSRF-TOKEN: {your-token-here}
+   → 200 OK
+
+   DELETE http://localhost:8080/api/v1/test/protected/1
+   Authorization: Basic admin/admin123
+   X-XSRF-TOKEN: {your-token-here}
+   → 200 OK
+   ```
+
+### How to Add CSRF Token in Postman
+
+**Method 1: Using Headers (Recommended)**
+1. Get token from `/csrf-token` endpoint
+2. In your POST/PUT/DELETE request, go to **Headers** tab
+3. Add new header:
+   - Key: `X-XSRF-TOKEN`
+   - Value: `{paste-token-here}`
+
+**Method 2: Using Request Parameter**
+1. Get token from `/csrf-token` endpoint
+2. In your POST request, add to URL or body:
+   - URL: `http://localhost:8080/api/v1/test/protected?_csrf={token}`
+   - OR in form-data body: key=`_csrf`, value=`{token}`
+
+**Method 1 (Headers) is recommended** as it's cleaner and works with JSON requests.
+
+### Summary: CSRF vs Regular Authorization
+
+| Aspect | Basic Auth | CSRF Protection |
+|--------|-----------|-----------------|
+| **Purpose** | Verify user identity | Prevent unauthorized requests from malicious sites |
+| **Protects Against** | Unauthorized access | Cross-site request forgery attacks |
+| **Required For** | All protected endpoints | State-changing methods (POST/PUT/DELETE/PATCH) |
+| **How It Works** | Username + password in header | Unique token per session |
+| **Attack Vector** | Credential theft | Malicious website making requests |
+| **Spring Security** | HTTP Basic Authentication | Synchronizer Token Pattern |
+
+**Both are required for full security:**
+- Basic Auth verifies "Who are you?"
+- CSRF Protection verifies "Is this request from you or from a malicious site?"
+
+### Expected Behavior Summary
+
+| Request Type | Auth | CSRF Token | Expected Result |
+|-------------|------|------------|----------------|
+| GET (any endpoint) | No | - | 401 Unauthorized |
+| GET (any endpoint) | Yes | - | 200 OK |
+| POST (any endpoint) | No | No | 401 Unauthorized |
+| POST (any endpoint) | Yes | No | **403 Forbidden** (CSRF) |
+| POST (any endpoint) | Yes | Invalid | **403 Forbidden** (CSRF) |
+| POST (any endpoint) | Yes | Valid | 200 OK (or 403 if role insufficient) |
+
+### Key Files Modified for Lab 4
+
+1. **SecurityConfig.java** - CSRF configuration
+   - Enabled CSRF protection (line 87-92)
+   - Configured CookieCsrfTokenRepository
+   - Added public endpoints
+
+2. **CsrfController.java** - New controller
+   - Provides `/csrf-token` endpoint
+   - Returns token in JSON format
+
+3. **TestController.java** - New test controller
+   - Multiple endpoints to demonstrate CSRF
+   - Different HTTP methods (GET, POST, PUT, DELETE)
+   - Role-based authorization examples
+
+4. **README.md** - This documentation
+   - Complete CSRF explanation
+   - Testing instructions
+   - Postman examples
 
 ---
 
