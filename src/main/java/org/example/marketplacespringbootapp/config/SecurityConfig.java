@@ -34,33 +34,37 @@ public class SecurityConfig {
      * - alice: Regular user (CUSTOMER role)
      */
     @Bean
-    public UserDetailsService userDetailsService(PasswordEncoder encoder) {
-        UserDetails admin = User.withUsername("admin")
-                .password(encoder.encode("admin123"))
+    public UserDetailsService userDetailsService() {
+        UserDetails admin = User.withDefaultPasswordEncoder()
+                .username("admin")
+                .password("admin123")
                 .roles("ADMIN")
                 .build();
 
-        UserDetails manager = User.withUsername("manager")
-                .password(encoder.encode("manager123"))
+        UserDetails manager = User.withDefaultPasswordEncoder()
+                .username("manager")
+                .password("manager123")
                 .roles("MANAGER")
                 .build();
 
-        UserDetails alice = User.withUsername("alice")
-                .password(encoder.encode("alice123"))
+        UserDetails alice = User.withDefaultPasswordEncoder()
+                .username("alice")
+                .password("alice123")
                 .roles("CUSTOMER")
                 .build();
 
         return new InMemoryUserDetailsManager(admin, manager, alice);
     }
 
+
     /**
      * Password encoder using BCrypt hashing algorithm.
      * BCrypt is a strong, adaptive hashing function designed for password storage.
      */
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
+//    @Bean
+//    public PasswordEncoder passwordEncoder() {
+//        return new BCryptPasswordEncoder();
+//    }
 
     /**
      * Main security filter chain with CSRF protection enabled.
@@ -89,6 +93,13 @@ public class SecurityConfig {
                         // Cookie name: XSRF-TOKEN (default)
                         // Header name: X-XSRF-TOKEN (default)
                         // Parameter name: _csrf (default)
+                )
+
+                // ===== SESSION MANAGEMENT =====
+                // Always create a session to support CSRF token validation
+                // Without this, Basic Auth won't create sessions and CSRF will fail
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(org.springframework.security.config.http.SessionCreationPolicy.ALWAYS)
                 )
 
                 // ===== AUTHORIZATION RULES =====
