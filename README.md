@@ -739,3 +739,249 @@ public void delete(@PathVariable Long id) { ... }
 
 ---
 
+## Task №6 — Advanced Route Annotations & Authorization
+
+### What's New in Lab 6
+
+Lab 6 enhances Lab 5 by adding **more detailed security annotations** to demonstrate various Spring Security authorization patterns:
+
+1. **hasRole('ROLE')** - Single role check
+2. **hasAnyRole('ROLE1', 'ROLE2')** - Multiple roles (OR condition)
+3. **Different permission levels** for different operations
+4. **Custom authorization logic** in service layer
+
+### Key Changes from Lab 5
+
+| Operation | Lab 5 Authorization | Lab 6 Authorization | Change |
+|-----------|---------------------|---------------------|--------|
+| DELETE Product | ADMIN **or** MANAGER | **ADMIN only** | ⚠️ More restrictive |
+| DELETE Order | No annotation | ADMIN or MANAGER | ✅ Added annotation |
+| All other operations | Same | Same | - |
+
+### Security Annotations Used
+
+#### ProductController (`/api/products`)
+
+| Endpoint | Method | Annotation | Allowed Roles |
+|----------|--------|------------|---------------|
+| `/api/products` | GET | None (authenticated) | ADMIN, MANAGER, CUSTOMER |
+| `/api/products/{id}` | GET | None (authenticated) | ADMIN, MANAGER, CUSTOMER |
+| `/api/products` | POST | `@PreAuthorize("hasAnyRole('ADMIN','MANAGER')")` | ADMIN, MANAGER |
+| `/api/products/{id}` | PUT | `@PreAuthorize("hasAnyRole('ADMIN','MANAGER')")` | ADMIN, MANAGER |
+| `/api/products/{id}` | DELETE | `@PreAuthorize("hasRole('ADMIN')")` | **ADMIN only** |
+
+#### OrderController (`/api/orders`)
+
+| Endpoint | Method | Annotation | Allowed Roles | Special Logic |
+|----------|--------|------------|---------------|---------------|
+| `/api/orders` | GET | None | All | ADMIN/MANAGER see all, CUSTOMER sees own |
+| `/api/orders` | POST | None | All | All can create orders |
+| `/api/orders/{id}` | GET | None | All | ADMIN/MANAGER see all, CUSTOMER sees own |
+| `/api/orders/{id}` | DELETE | `@PreAuthorize("hasAnyRole('ADMIN','MANAGER')")` | ADMIN, MANAGER |
+
+### 10 HTTP Requests for Lab 6 (10 × 0.5 = 5 points)
+
+#### Request 1: GET Products as CUSTOMER ✅
+```
+GET http://localhost:8080/api/products
+Authorization: Basic alice:alice123
+
+Expected: 200 OK
+Demonstrates: Authenticated users can read products
+```
+
+#### Request 2: POST Create Product as ADMIN ✅
+```
+POST http://localhost:8080/api/products
+Authorization: Basic admin:admin123
+Content-Type: application/json
+
+{
+  "sku": "TABLET-001",
+  "name": "iPad Pro 12.9",
+  "price": 1099.99,
+  "stock": 8
+}
+
+Expected: 201 Created
+Demonstrates: @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+```
+
+#### Request 3: POST Create Product as MANAGER ✅
+```
+POST http://localhost:8080/api/products
+Authorization: Basic manager:manager123
+Content-Type: application/json
+
+{
+  "sku": "SPEAKER-001",
+  "name": "Sonos One",
+  "price": 219.99,
+  "stock": 12
+}
+
+Expected: 201 Created
+Demonstrates: @PreAuthorize("hasAnyRole('ADMIN','MANAGER')") allows MANAGER
+```
+
+#### Request 4: POST Create Product as CUSTOMER ❌
+```
+POST http://localhost:8080/api/products
+Authorization: Basic alice:alice123
+Content-Type: application/json
+
+{
+  "sku": "WEBCAM-001",
+  "name": "Logitech C920",
+  "price": 79.99,
+  "stock": 20
+}
+
+Expected: 403 Forbidden
+Demonstrates: CUSTOMER role blocked by @PreAuthorize
+```
+
+#### Request 5: PUT Update Product as MANAGER ✅
+```
+PUT http://localhost:8080/api/products/1
+Authorization: Basic manager:manager123
+Content-Type: application/json
+
+{
+  "sku": "TECH-001",
+  "name": "Laptop Dell XPS 15 (Updated)",
+  "price": 1199.99,
+  "stock": 5
+}
+
+Expected: 200 OK
+Demonstrates: @PreAuthorize("hasAnyRole('ADMIN','MANAGER')") allows update
+```
+
+#### Request 6: DELETE Product as ADMIN ✅
+```
+DELETE http://localhost:8080/api/products/3
+Authorization: Basic admin:admin123
+
+Expected: 204 No Content
+Demonstrates: @PreAuthorize("hasRole('ADMIN')") - Only ADMIN
+```
+
+#### Request 7: DELETE Product as MANAGER ❌ (NEW in Lab 6!)
+```
+DELETE http://localhost:8080/api/products/4
+Authorization: Basic manager:manager123
+
+Expected: 403 Forbidden
+Demonstrates: @PreAuthorize("hasRole('ADMIN')") blocks MANAGER
+Note: This is DIFFERENT from Lab 5 where MANAGER could delete!
+```
+
+#### Request 8: DELETE Product as CUSTOMER ❌
+```
+DELETE http://localhost:8080/api/products/5
+Authorization: Basic alice:alice123
+
+Expected: 403 Forbidden
+Demonstrates: CUSTOMER blocked by @PreAuthorize("hasRole('ADMIN')")
+```
+
+#### Request 9: PUT Update Product as CUSTOMER ❌
+```
+PUT http://localhost:8080/api/products/2
+Authorization: Basic alice:alice123
+Content-Type: application/json
+
+{
+  "sku": "TECH-002",
+  "name": "Hacked Product",
+  "price": 0.01,
+  "stock": 999
+}
+
+Expected: 403 Forbidden
+Demonstrates: @PreAuthorize("hasAnyRole('ADMIN','MANAGER')") blocks CUSTOMER
+```
+
+#### Request 10: GET Products WITHOUT Authentication ❌
+```
+GET http://localhost:8080/api/products
+Authorization: No Auth
+
+Expected: 401 Unauthorized
+Demonstrates: All endpoints require authentication (SecurityConfig)
+```
+
+### Expected Results Summary
+
+| # | Endpoint | Method | User | Annotation Pattern | Expected | Key Demonstration |
+|---|----------|--------|------|-------------------|----------|-------------------|
+| 1 | /api/products | GET | alice | Authenticated | 200 OK | Basic authentication |
+| 2 | /api/products | POST | admin | hasAnyRole(ADMIN,MANAGER) | 201 Created | ADMIN allowed |
+| 3 | /api/products | POST | manager | hasAnyRole(ADMIN,MANAGER) | 201 Created | MANAGER allowed |
+| 4 | /api/products | POST | alice | hasAnyRole(ADMIN,MANAGER) | **403 Forbidden** | CUSTOMER blocked |
+| 5 | /api/products/1 | PUT | manager | hasAnyRole(ADMIN,MANAGER) | 200 OK | MANAGER can update |
+| 6 | /api/products/3 | DELETE | admin | hasRole(ADMIN) | 204 No Content | ADMIN can delete |
+| 7 | /api/products/4 | DELETE | manager | hasRole(ADMIN) | **403 Forbidden** | **MANAGER blocked!** (Lab 6 change) |
+| 8 | /api/products/5 | DELETE | alice | hasRole(ADMIN) | **403 Forbidden** | CUSTOMER blocked |
+| 9 | /api/products/2 | PUT | alice | hasAnyRole(ADMIN,MANAGER) | **403 Forbidden** | CUSTOMER blocked |
+| 10 | /api/products | GET | (none) | Authenticated | **401 Unauthorized** | No auth = denied |
+
+### Annotation Patterns Demonstrated
+
+1. **No annotation (default)** - Requires authentication only
+   ```java
+   @GetMapping
+   public List<Product> list() { ... }
+   ```
+
+2. **hasAnyRole() - Multiple roles (OR)**
+   ```java
+   @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+   public Product create(...) { ... }
+   ```
+
+3. **hasRole() - Single role**
+   ```java
+   @PreAuthorize("hasRole('ADMIN')")
+   public void delete(...) { ... }
+   ```
+
+4. **Custom logic in service layer**
+   ```java
+   // Controller: No @PreAuthorize
+   // Service: Checks if user owns the resource
+   public List<Order> listAll(Authentication auth) {
+       if (isAdmin(auth) || isManager(auth)) {
+           return findAll(); // See all orders
+       }
+       return findByOwner(auth.getName()); // See own only
+   }
+   ```
+
+### Testing in Postman
+
+**Important:** Request 7 is the **key difference** from Lab 5!
+
+In Lab 5: MANAGER could DELETE products
+In Lab 6: Only ADMIN can DELETE products
+
+**To test:**
+1. Start app: `./mvnw spring-boot:run`
+2. Follow the 10 requests above
+3. **Pay attention to Request 7** - MANAGER getting 403 when deleting
+
+### Key Files Modified for Lab 6
+
+1. **ProductController.java** - Enhanced annotations
+   - DELETE changed to `@PreAuthorize("hasRole('ADMIN')")` (was `hasAnyRole` before)
+   - Detailed JavaDoc comments explaining each annotation
+
+2. **OrderController.java** - Added annotations
+   - DELETE now has `@PreAuthorize("hasAnyRole('ADMIN','MANAGER')")`
+   - Documented custom authorization logic
+
+3. **README.md** - This documentation
+
+---
+
