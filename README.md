@@ -1,7 +1,7 @@
 
 # Simple Marketplace Web Application
-Spring Boot CRUD + Basic Authentication + CSRF Protection
-Tasks №2, №3, and №4
+Spring Boot CRUD + Basic Authentication + CSRF Protection + Role-Based Access Control
+Tasks №2, №3, №4, and №5
 
 ---
 
@@ -10,6 +10,8 @@ A simple Spring Boot web application that demonstrates:
 - CRUD REST API for managing Products and Orders
 - Basic Authentication protection with user roles
 - **CSRF (Cross-Site Request Forgery) Protection (Lab 4)**
+- **Role-Based Access Control - RBAC (Lab 5)**
+- Sample data initialization on startup
 - No database (data stored in memory)
 - Tested via Postman
 
@@ -540,6 +542,200 @@ Content-Type: application/json
    - Complete CSRF explanation
    - Testing instructions
    - Postman examples
+
+---
+
+## Task №5 — Role-Based Access Control (RBAC)
+
+### Users and Roles
+
+The application has 3 users with different permission levels:
+
+| Username | Password | Role | Permissions |
+|----------|----------|------|-------------|
+| **admin** | admin123 | ADMIN | Full access - can create, read, update, delete all resources |
+| **manager** | manager123 | MANAGER | Can manage products (create, update, delete), view all orders |
+| **alice** | alice123 | CUSTOMER | Can view products, create and view own orders only |
+
+### Access Control Rules
+
+#### Products (`/api/products`)
+
+| Operation | Endpoint | Method | ADMIN | MANAGER | CUSTOMER |
+|-----------|----------|--------|-------|---------|----------|
+| List all products | `/api/products` | GET | ✅ | ✅ | ✅ |
+| Get product by ID | `/api/products/{id}` | GET | ✅ | ✅ | ✅ |
+| Create product | `/api/products` | POST | ✅ | ✅ | ❌ 403 |
+| Update product | `/api/products/{id}` | PUT | ✅ | ✅ | ❌ 403 |
+| Delete product | `/api/products/{id}` | DELETE | ✅ | ✅ | ❌ 403 |
+
+#### Orders (`/api/orders`)
+
+| Operation | Endpoint | Method | ADMIN | MANAGER | CUSTOMER |
+|-----------|----------|--------|-------|---------|----------|
+| List orders | `/api/orders` | GET | All orders | All orders | Own orders only |
+| Create order | `/api/orders` | POST | ✅ | ✅ | ✅ |
+| Get order by ID | `/api/orders/{id}` | GET | ✅ | ✅ | Own orders only |
+| Delete order | `/api/orders/{id}` | DELETE | ✅ | ✅ | ❌ 403 |
+
+### Sample Data
+
+The application automatically initializes with 5 sample products on startup:
+
+1. **Laptop Dell XPS 15** - SKU: TECH-001, Price: $1299.99, Stock: 10
+2. **Wireless Mouse Logitech MX** - SKU: TECH-002, Price: $79.99, Stock: 50
+3. **Mechanical Keyboard Keychron K2** - SKU: TECH-003, Price: $89.99, Stock: 30
+4. **Monitor LG 27 inch 4K** - SKU: TECH-004, Price: $399.99, Stock: 15
+5. **Headphones Sony WH-1000XM5** - SKU: TECH-005, Price: $349.99, Stock: 25
+
+### 10 HTTP Requests for Lab 5 (10 × 0.5 = 5 points)
+
+#### Request 1: GET Products as ADMIN ✅
+```
+GET http://localhost:8080/api/products
+Authorization: Basic admin:admin123
+Expected: 200 OK - Returns all 5 products
+```
+
+#### Request 2: GET Products as MANAGER ✅
+```
+GET http://localhost:8080/api/products
+Authorization: Basic manager:manager123
+Expected: 200 OK - Returns all 5 products
+```
+
+#### Request 3: GET Products as CUSTOMER ✅
+```
+GET http://localhost:8080/api/products
+Authorization: Basic alice:alice123
+Expected: 200 OK - Returns all 5 products
+```
+
+#### Request 4: POST Create Product as ADMIN ✅
+```
+POST http://localhost:8080/api/products
+Authorization: Basic admin:admin123
+Content-Type: application/json
+
+{
+  "sku": "LAPTOP-001",
+  "name": "Gaming Laptop ASUS ROG",
+  "price": 1499.99,
+  "stock": 5
+}
+
+Expected: 201 Created - Product created successfully
+```
+
+#### Request 5: POST Create Product as MANAGER ✅
+```
+POST http://localhost:8080/api/products
+Authorization: Basic manager:manager123
+Content-Type: application/json
+
+{
+  "sku": "MOUSE-001",
+  "name": "Gaming Mouse Razer DeathAdder",
+  "price": 69.99,
+  "stock": 20
+}
+
+Expected: 201 Created - Product created successfully
+```
+
+#### Request 6: POST Create Product as CUSTOMER ❌
+```
+POST http://localhost:8080/api/products
+Authorization: Basic alice:alice123
+Content-Type: application/json
+
+{
+  "sku": "KEYBOARD-001",
+  "name": "Mechanical Keyboard",
+  "price": 129.99,
+  "stock": 15
+}
+
+Expected: 403 Forbidden - Access Denied (CUSTOMER cannot create products)
+```
+
+#### Request 7: DELETE Product as ADMIN ✅
+```
+DELETE http://localhost:8080/api/products/1
+Authorization: Basic admin:admin123
+
+Expected: 204 No Content - Product deleted successfully
+```
+
+#### Request 8: DELETE Product as MANAGER ✅
+```
+DELETE http://localhost:8080/api/products/2
+Authorization: Basic manager:manager123
+
+Expected: 204 No Content - Product deleted successfully
+```
+
+#### Request 9: DELETE Product as CUSTOMER ❌
+```
+DELETE http://localhost:8080/api/products/3
+Authorization: Basic alice:alice123
+
+Expected: 403 Forbidden - Access Denied (CUSTOMER cannot delete products)
+```
+
+#### Request 10: GET Products WITHOUT Authentication ❌
+```
+GET http://localhost:8080/api/products
+Authorization: No Auth
+
+Expected: 401 Unauthorized - Authentication required
+```
+
+### Expected Results Summary
+
+| # | Endpoint | Method | User | Expected Status | Demonstrates |
+|---|----------|--------|------|----------------|--------------|
+| 1 | /api/products | GET | admin | 200 OK | ADMIN can read |
+| 2 | /api/products | GET | manager | 200 OK | MANAGER can read |
+| 3 | /api/products | GET | alice | 200 OK | CUSTOMER can read |
+| 4 | /api/products | POST | admin | 201 Created | ADMIN can create |
+| 5 | /api/products | POST | manager | 201 Created | MANAGER can create |
+| 6 | /api/products | POST | alice | **403 Forbidden** | CUSTOMER cannot create |
+| 7 | /api/products/1 | DELETE | admin | 204 No Content | ADMIN can delete |
+| 8 | /api/products/2 | DELETE | manager | 204 No Content | MANAGER can delete |
+| 9 | /api/products/3 | DELETE | alice | **403 Forbidden** | CUSTOMER cannot delete |
+| 10 | /api/products | GET | (none) | **401 Unauthorized** | Auth required |
+
+### Implementation Details
+
+**Authorization Rules** - Located in `ProductController.java`:
+```java
+// Any authenticated user can read products
+@GetMapping
+public List<Product> list() { ... }
+
+// Only ADMIN or MANAGER can create/update/delete
+@PostMapping
+@PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+public Product create(@RequestBody @Valid ProductDTO dto) { ... }
+
+@DeleteMapping("/{id}")
+@PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+public void delete(@PathVariable Long id) { ... }
+```
+
+**Security Configuration** - Located in `SecurityConfig.java:85-121`:
+- HTTP Basic Authentication for all endpoints
+- Session management enabled for CSRF support
+- Method-level security with `@PreAuthorize` annotations
+- Role-based authorization using Spring Security
+
+### Key Files for Lab 5
+
+1. **SecurityConfig.java** - User definitions and security configuration
+2. **ProductController.java** - `@PreAuthorize` annotations for role-based access
+3. **OrderController.java** - Custom authorization logic in service layer
+4. **DataInitializer.java** - Populates sample data on startup
 
 ---
 
